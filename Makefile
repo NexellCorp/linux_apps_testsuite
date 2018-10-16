@@ -8,7 +8,7 @@ DIR += cam_test
 DIR += camera_test_onedevice
 DIR += dp_cam_test_onedevice
 DIR += mpegts_test
-DIR += uac_test
+DIR += uvc_test
 
 CROSS_COMPILE ?= aarch64-linux-gnu-
 
