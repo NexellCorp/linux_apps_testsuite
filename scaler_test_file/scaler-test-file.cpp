@@ -77,6 +77,12 @@ static int32_t DoScaling(NX_MEMORY_HANDLE hIn, NX_MEMORY_HANDLE hOut,
 	struct nx_scaler_context scalerCtx;
 	int32_t ret;
 	int32_t hScaler = scaler_open();
+
+	if (hScaler < 0) {
+		pr_err("[%s] failed to open scaler:%d\n", __func__, hScaler);
+		return hScaler;
+	}
+
 	memset(&scalerCtx, 0, sizeof(struct nx_scaler_context));
 
 	// scaler crop
