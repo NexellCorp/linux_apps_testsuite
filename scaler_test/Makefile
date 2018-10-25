@@ -1,6 +1,7 @@
 CFLAGS = -Wall
 INCLUDES := -I./
 INCLUDES += -I../../sysroot/include
+INCLUDES += -I../../sysroot/include/nexell
 INCLUDES += -I../../sysroot/include/libdrm
 INCLUDES += -I../../sysroot/include/libkms
 INCLUDES += -I../../nx-renderer/include

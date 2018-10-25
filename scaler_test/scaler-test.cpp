@@ -58,6 +58,10 @@
 #define YUV_YSTRIDE(w)	(ALIGN(w/2, YUV_STRIDE_ALIGN_FACTOR) * 2)
 #define YUV_VSTRIDE(h)	ALIGN(h, YUV_VSTRIDE_ALIGN_FACTOR)
 
+#define NX_PLANE_TYPE_RGB       (0<<4)
+#define NX_PLANE_TYPE_VIDEO     (1<<4)
+#define NX_PLANE_TYPE_UNKNOWN   (0xFFFFFFF)
+
 static const uint32_t dp_formats[] = {
 
 	/* 1 buffer */
@@ -131,34 +135,170 @@ struct dp_device * display_device_init(int fd)
 	return device;
 }
 
+/* type : DRM_PLANE_TYPE_OVERLAY | NX_PLANE_TYPE_VIDEO */
+int get_plane_index_by_type(struct dp_device *device, uint32_t port, uint32_t type)
+{
+	int i = 0, j = 0;
+	int ret = -1;
+	drmModeObjectPropertiesPtr props;
+	uint32_t plane_type = -1;
+	int find_idx = 0;
+	int prop_type = -1;
+
+	/* type overlay or primary or cursor */
+	int layer_type = type & 0x3;
+	/*	display_type video : 1 << 4, rgb : 0 << 4	*/
+	int display_type = type & 0xf0;
+
+	for (i = 0; i < device->num_planes; i++) {
+		props = drmModeObjectGetProperties(device->fd,
+					device->planes[i]->id,
+					DRM_MODE_OBJECT_PLANE);
+		if (!props)
+			return -ENODEV;
+
+		prop_type = -1;
+		plane_type = NX_PLANE_TYPE_VIDEO;
+
+		for (j = 0; j < props->count_props; j++) {
+			drmModePropertyPtr prop;
+
+			prop = drmModeGetProperty(device->fd, props->props[j]);
+			if (prop) {
+				DP_DBG("plane.%2d %d.%d [%s]\n",
+					device->planes[i]->id,
+					props->count_props,
+					j,
+					prop->name);
+
+				if (strcmp(prop->name, "type") == 0)
+					prop_type = (int)props->prop_values[j];
+
+				if (strcmp(prop->name, "alphablend") == 0)
+					plane_type = NX_PLANE_TYPE_RGB;
+
+				drmModeFreeProperty(prop);
+			}
+		}
+		drmModeFreeObjectProperties(props);
+
+		DP_DBG("prop type : %d, layer type : %d\n",
+				prop_type, layer_type);
+		DP_DBG("disp type : %d, plane type : %d\n",
+				display_type, plane_type);
+		DP_DBG("find idx : %d, port : %d\n\n",
+				find_idx, port);
+
+		if (prop_type == layer_type && display_type == plane_type
+				&& find_idx == port) {
+			ret = i;
+			break;
+		}
+
+		if (prop_type == layer_type && display_type == plane_type)
+			find_idx++;
+
+		if (find_idx > port)
+			break;
+	}
+
+	return ret;
+}
+
 void set_plane(struct dp_device *device, struct dp_framebuffer *fb,
 	uint32_t w, uint32_t h)
 {
-	int d_idx = 0, p_idx = 0;
 	struct dp_plane *plane;
+	uint32_t video_type, video_index;
 
-	plane = dp_device_find_plane_by_index(device,
-			d_idx, p_idx);
-	if (!plane) {
-		printf("no overlay plane found\n");
+	video_type = DRM_PLANE_TYPE_OVERLAY | NX_PLANE_TYPE_VIDEO;
+	video_index = get_plane_index_by_type(device, 0, video_type);
+	if (video_index < 0) {
+		DP_ERR("fail : not found matching layer\n");
 		return;
 	}
+	plane = device->planes[video_index];
 	dp_plane_set(plane, fb, 0,0, w, h,0,0,w,h);
 }
 
-struct dp_framebuffer *display_buffer_init(struct dp_device *device, int  x, int y, int gem_fd, int buf_size)
+int get_plane_prop_id_by_property_name(int drm_fd, uint32_t plane_id,
+		char *prop_name)
+{
+	int res = -1;
+	drmModeObjectPropertiesPtr props;
+	props = drmModeObjectGetProperties(drm_fd, plane_id,
+			DRM_MODE_OBJECT_PLANE);
+
+	if (props) {
+		int i;
+
+		for (i = 0; i < props->count_props; i++) {
+			drmModePropertyPtr this_prop;
+			this_prop = drmModeGetProperty(drm_fd, props->props[i]);
+
+			if (this_prop) {
+				DP_DBG("prop name : %s, prop id: %d, param prop id: %s\n",
+						this_prop->name,
+						this_prop->prop_id,
+						prop_name
+						);
+
+				if (!strncmp(this_prop->name, prop_name,
+							DRM_PROP_NAME_LEN)) {
+
+					res = this_prop->prop_id;
+
+					drmModeFreeProperty(this_prop);
+					break;
+				}
+				drmModeFreeProperty(this_prop);
+			}
+		}
+		drmModeFreeObjectProperties(props);
+	}
+
+	return res;
+}
+
+int set_priority_video_plane(struct dp_device *device, uint32_t plane_idx,
+		uint32_t set_idx)
+{
+	uint32_t plane_id = device->planes[plane_idx]->id;
+	uint32_t prop_id = get_plane_prop_id_by_property_name(device->fd,
+							plane_id,
+							"video-priority");
+	int res = -1;
+
+	res = drmModeObjectSetProperty(device->fd,
+			plane_id,
+			DRM_MODE_OBJECT_PLANE,
+			prop_id,
+			set_idx);
+
+	return res;
+}
+
+struct dp_framebuffer *display_buffer_init(struct dp_device *device, int  x, int y,
+		int gem_fd, int buf_size, int t)
 {
 	struct dp_framebuffer *fb = NULL;
-	int d_idx = 0, p_idx = 0, op_format = 8;
+	int op_format = 8;
 	struct dp_plane *plane;
 
 	uint32_t format;
 	int err;
+	uint32_t video_type, video_index;
+	int32_t res;
 
-	plane = dp_device_find_plane_by_index(device,
-			d_idx, p_idx);
-	if (!plane) {
-		printf("no overlay plane found\n");
+	video_type = DRM_PLANE_TYPE_OVERLAY | NX_PLANE_TYPE_VIDEO;
+	video_index = get_plane_index_by_type(device, 0, video_type);
+	if (video_index < 0) {
+		DP_ERR("fail : not found matching layer\n");
+		return NULL;
+	}
+	plane = device->planes[video_index];
+	if (res = set_priority_video_plane(device, video_index, 1)) {
+		DP_ERR("failed setting priority : %d\n", res);
 		return NULL;
 	}
 
@@ -168,7 +308,8 @@ struct dp_framebuffer *display_buffer_init(struct dp_device *device, int  x, int
 		return NULL;
 	}
 
-	fb = dp_framebuffer_config(device, format, x, y, 0, gem_fd, buf_size);
+	fb = dp_framebuffer_config(device, format, x, y, 0, gem_fd,
+			buf_size);
 	if (!fb)
 	{
 		printf("fail : framebuffer create Fail \n");
@@ -191,13 +332,17 @@ struct dp_framebuffer *display_buffer_init(struct dp_device *device, int  x, int
 
 void init_scale_context(uint32_t w, uint32_t h, uint32_t s_w, uint32_t s_h,
 	uint32_t f, uint32_t plane_num, struct rect crop,
-	struct nx_scaler_context *s_ctx)
+	struct nx_scaler_context *s_ctx, uint32_t t)
 {
-
-	uint32_t src_y_stride = ALIGN(w, 32);
-	uint32_t src_c_stride = ALIGN(src_y_stride >> 1, 16);
 	uint32_t dst_y_stride = ALIGN(s_w, 8);
 	uint32_t dst_c_stride = ALIGN(dst_y_stride >> 1, 4);
+	uint32_t src_y_stride, src_c_stride;
+
+	if (t == V4L2_FIELD_INTERLACED)
+		src_y_stride = ALIGN(w, 128);
+	else
+		src_y_stride = ALIGN(w, 32);
+	src_c_stride = ALIGN(src_y_stride >> 1, 16);
 
 	s_ctx->crop.x = crop.x;
 	s_ctx->crop.y = crop.y;
@@ -221,6 +366,38 @@ void init_scale_context(uint32_t w, uint32_t h, uint32_t s_w, uint32_t s_h,
 	s_ctx->dst_stride[0] = dst_y_stride;
 	s_ctx->dst_stride[1] = dst_c_stride;
 	s_ctx->dst_stride[2] = dst_c_stride;
+}
+
+static size_t calc_alloc_size_interlace(uint32_t w, uint32_t h, uint32_t f, uint32_t t)
+{
+	uint32_t y_stride = ALIGN(w, 128);
+	uint32_t y_size = y_stride * ALIGN(h, 16);
+	size_t size = 0;
+	uint32_t y = 0, cb = 0, cr = 0;
+
+	switch (f) {
+	case V4L2_PIX_FMT_YUYV:
+	case V4L2_PIX_FMT_NV16:
+	case V4L2_PIX_FMT_NV61:
+		size = y_size << 1;
+		break;
+
+	case V4L2_PIX_FMT_YUV420:
+		size = y_size +
+			2 * (ALIGN(w >> 1, 64) * ALIGN(h >> 1, 16));
+		y = y_size;
+		cb = (ALIGN(w >> 1, 64) * ALIGN(h >> 1, 16));
+		cr = (ALIGN(w >> 1, 64) * ALIGN(h >> 1, 16));
+		break;
+
+	case V4L2_PIX_FMT_NV21:
+	case V4L2_PIX_FMT_NV12:
+		size = y_size + y_stride * ALIGN(h >> 1, 16);
+		break;
+	}
+	DP_DBG("[%s] format = %u, size = %d \n ",__func__,f,size);
+
+	return size;
 }
 
 static size_t calc_alloc_size(uint32_t w, uint32_t h, uint32_t f)
@@ -254,7 +431,7 @@ static size_t calc_alloc_size(uint32_t w, uint32_t h, uint32_t f)
 
 int scaler_test(struct dp_device *device, int drm_fd, uint32_t m, uint32_t w,
 	uint32_t h, uint32_t s_w, uint32_t s_h, uint32_t f, uint32_t bus_f,
-	uint32_t count, struct rect crop)
+	uint32_t count, struct rect crop, uint32_t t)
 {
 	struct nx_scaler_context s_ctx;
 	int ret;
@@ -270,10 +447,37 @@ int scaler_test(struct dp_device *device, int drm_fd, uint32_t m, uint32_t w,
 	if (f == 0)
 		f = V4L2_PIX_FMT_YUV420;
 
-	if (bus_f == 0)
+	switch (bus_f) {
+	case 0:
 		bus_f = MEDIA_BUS_FMT_YUYV8_2X8;
+		break;
+	case 1:
+		bus_f = MEDIA_BUS_FMT_UYVY8_2X8;
+		break;
+	case 2:
+		bus_f = MEDIA_BUS_FMT_VYUY8_2X8;
+		break;
+	case 3:
+		bus_f = MEDIA_BUS_FMT_YVYU8_2X8;
+		break;
+	};
 
-	init_scale_context(w, h, s_w, s_h, bus_f, 1, crop, &s_ctx);
+	switch (t) {
+	case 0:
+		t = V4L2_FIELD_ANY;
+		break;
+	case 1:
+		t = V4L2_FIELD_NONE;
+		break;
+	case 2:
+		t = V4L2_FIELD_INTERLACED;
+		break;
+	default:
+		t = V4L2_FIELD_ANY;
+		break;
+	};
+
+	init_scale_context(w, h, s_w, s_h, bus_f, 1, crop, &s_ctx, t);
 	handle = scaler_open();
 	if (handle == -1) {
 		fprintf(stderr, "failed to open scaler\n");
@@ -357,7 +561,8 @@ int scaler_test(struct dp_device *device, int drm_fd, uint32_t m, uint32_t w,
 		return ret;
 	}
 
-	ret = nx_v4l2_set_format(clipper_video_fd, nx_clipper_video, w, h, f);
+	ret = nx_v4l2_set_format_with_field(clipper_video_fd, nx_clipper_video,
+		w, h, f, t);
 	if (ret) {
 		fprintf(stderr, "failed to set_format for clipper video\n");
 		return ret;
@@ -377,7 +582,11 @@ int scaler_test(struct dp_device *device, int drm_fd, uint32_t m, uint32_t w,
 		return ret;
 	}
 
-	size_t alloc_size = calc_alloc_size(w, h, f);
+	size_t alloc_size;
+	if (t == V4L2_FIELD_INTERLACED)
+		alloc_size = calc_alloc_size_interlace(w, h, f, t);
+	else
+		alloc_size = calc_alloc_size(w, h, f);
 	if (alloc_size <= 0) {
 		fprintf(stderr, "invalid alloc size %lu\n", alloc_size);
 		return -1;
@@ -400,7 +609,8 @@ int scaler_test(struct dp_device *device, int drm_fd, uint32_t m, uint32_t w,
 		dma_fds[i] = dma_fd;
 	}
 
-	size_t dst_alloc_size = calc_alloc_size(s_w, s_h, f);
+	size_t dst_alloc_size;
+	dst_alloc_size = calc_alloc_size(s_w, s_h, f);
 	if (dst_alloc_size <= 0) {
 		fprintf(stderr, "invalid alloc size %lu\n",
 				dst_alloc_size);
@@ -420,7 +630,7 @@ int scaler_test(struct dp_device *device, int drm_fd, uint32_t m, uint32_t w,
 			return -1;
 		}
 		struct dp_framebuffer *fb = display_buffer_init(device, s_w,
-				s_h, gem_fd, static_cast<int>(dst_alloc_size));
+				s_h, gem_fd, static_cast<int>(dst_alloc_size), t);
 		if (!fb) {
 			printf("fail : framebuffer Init %m\n");
 			ret = -1;
@@ -506,7 +716,7 @@ int scaler_test(struct dp_device *device, int drm_fd, uint32_t m, uint32_t w,
 int main(int argc, char *argv[])
 {
 	int ret, drm_fd, err;
-	uint32_t m, w, h, f, bus_f, count;
+	uint32_t m, w, h, f, bus_f, count, t;
 	struct dp_device *device;
 	int dbg_on = 0;
 	uint32_t s_w, s_h;
@@ -520,7 +730,7 @@ int main(int argc, char *argv[])
 	dp_debug_on(dbg_on);
 
 	ret = handle_option(argc, argv, &m, &w, &h, &s_w, &s_h, &f, &bus_f,
-		&count, &crop);
+		&count, &crop, &t);
 	if (ret) {
 		fprintf(stderr, "failed to handle_option\n");
 		return ret;
@@ -541,9 +751,9 @@ int main(int argc, char *argv[])
 	}
 
 	err = scaler_test(device, drm_fd, m, w, h, s_w, s_h, f, bus_f, count,
-			crop);
+			crop, t);
 	if (err < 0) {
-		fprintf(stderr, "failed to do camera_test \n");
+		fprintf(stderr, "failed to do scaler_test \n");
 		return -1;
 	}
 

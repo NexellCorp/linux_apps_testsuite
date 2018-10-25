@@ -27,11 +27,11 @@
 
 int handle_option(int argc, char **argv, uint32_t *m, uint32_t *w, uint32_t *h,
 	uint32_t *W, uint32_t *H, uint32_t *f, uint32_t *bus_f, uint32_t *c,
-	struct rect *S)
+	struct rect *S, uint32_t *t)
 {
 	int opt;
 
-	while ((opt = getopt(argc, argv, "m:w:h:W:H:f:F:c:S:")) != -1) {
+	while ((opt = getopt(argc, argv, "m:w:h:W:H:f:F:c:S:t:")) != -1) {
 		switch (opt) {
 		case 'm':
 			*m = atoi(optarg);
@@ -61,12 +61,15 @@ int handle_option(int argc, char **argv, uint32_t *m, uint32_t *w, uint32_t *h,
 			sscanf(optarg, "%d, %d, %d, %d",
 			&S->x, &S->y, &S->width, &S->height);
 			break;
+		case 't':
+			*t = atoi(optarg);
+			break;
 
 		}
 	}
 
-	printf("m: %d, w: %d, h: %d, W: %d, H: %d, f: %d, bus_f: %d, c: %d\n",
-	       *m, *w, *h, *W, *H, *f, *bus_f, *c);
+	printf("m: %d, w: %d, h: %d, W: %d, H: %d, f: %d, bus_f: %d, c: %d, t: %d\n",
+	       *m, *w, *h, *W, *H, *f, *bus_f, *c, *t);
 	printf("c_x : %d, c_y : %d, c_w : %d, c_h : %d\n", S->x, S->y,
 		S->width, S->height);
 
