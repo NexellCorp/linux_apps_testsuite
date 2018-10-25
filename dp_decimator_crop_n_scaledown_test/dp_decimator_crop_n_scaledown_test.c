@@ -35,6 +35,10 @@
 static int disp_width;
 static int disp_height;
 
+#define NX_PLANE_TYPE_RGB       (0<<4)
+#define NX_PLANE_TYPE_VIDEO     (1<<4)
+#define NX_PLANE_TYPE_UNKNOWN   (0xFFFFFFF)
+
 struct thread_data {
 	int drm_fd;
 	struct dp_device *device;
@@ -164,14 +168,21 @@ int dp_plane_update(struct dp_device *device, struct dp_framebuffer *fb,
 {
 	int d_idx = 1/*overlay*/, p_idx = 0, err;
 	struct dp_plane *plane;
+	uint32_t video_type, video_index;
 
-	d_idx = dp_idx;
+	video_type = DRM_PLANE_TYPE_OVERLAY | NX_PLANE_TYPE_VIDEO;
+	video_index = get_plane_index_by_type(device, 0, video_type);
+	if (video_index < 0) {
+		DP_ERR("fail : not found matching layer\n");
+		return -EINVAL;
+	}
 
-	plane = dp_device_find_plane_by_index(device, d_idx, p_idx);
+	plane = device->planes[video_index];
 	if (!plane) {
 		DP_ERR("no overlay plane found\n");
 		return -EINVAL;
 	}
+	d_idx = dp_idx;
 
 	err = dp_plane_set(plane, fb, 0, 0, w, h, 0, 0, w, h);
 	if (err < 0) {
@@ -191,15 +202,21 @@ int gem_fd, int dp_idx)
 
 	uint32_t format;
 	int err;
+	uint32_t video_type, video_index;
 
-	d_idx = dp_idx;
+	video_type = DRM_PLANE_TYPE_OVERLAY | NX_PLANE_TYPE_VIDEO;
+	video_index = get_plane_index_by_type(device, 0, video_type);
+	if (video_index < 0) {
+		DP_ERR("fail : not found matching layer\n");
+		return -EINVAL;
+	}
 
-	plane = dp_device_find_plane_by_index(device,
-					      d_idx, p_idx);
+	plane = device->planes[video_index];
 	if (!plane) {
 		DP_ERR("no overlay plane found\n");
 		return NULL;
 	}
+	d_idx = dp_idx;
 
 	/*
 	 * set plane format
