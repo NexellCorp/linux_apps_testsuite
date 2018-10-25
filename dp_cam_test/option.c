@@ -5,52 +5,74 @@
 
 #include "option.h"
 
-int handle_option(int argc, char **argv, uint32_t *m, uint32_t *w,
-		  uint32_t *h, uint32_t *W, uint32_t *H, uint32_t *f,
-		  uint32_t *bus_f, uint32_t *c, uint32_t *t, uint32_t *p,
-		  uint32_t *o, uint32_t *d)
+
+int handle_option(int argc, char **argv, DP_CAM_INFO *pDPCamInfo)
 {
 	int opt;
 
-	while ((opt = getopt(argc, argv, "m:w:h:f:F:c:W:H:t:p:o:d:")) != -1) {
+	while ((opt = getopt(argc, argv, "m:w:h:f:F:c:W:H:t:p:o:d:x:y:s:M:r:")) != -1) {
 		switch (opt) {
 		case 'm':
-			*m = atoi(optarg);
+			pDPCamInfo->m = atoi(optarg);
 			break;
 		case 'w':
-			*w = atoi(optarg);
+			pDPCamInfo->w = atoi(optarg);
 			break;
 		case 'h':
-			*h = atoi(optarg);
+			pDPCamInfo->h = atoi(optarg);
 			break;
 		case 'f':
-			*f = atoi(optarg);
+			pDPCamInfo->f = atoi(optarg);
 			break;
 		case 'F':
-			*bus_f = atoi(optarg);
+			pDPCamInfo->bus_f = atoi(optarg);
 			break;
 		case 'c':
-			*c = atoi(optarg);
+			pDPCamInfo->count = atoi(optarg);
 			break;
 		case 'W':
-			*W = atoi(optarg);
+			pDPCamInfo->sw = atoi(optarg);
 			break;
 		case 'H':
-			*H = atoi(optarg);
+			pDPCamInfo->sh = atoi(optarg);
 			break;
 		case 't':
-			*t = atoi(optarg);
+			pDPCamInfo->t = atoi(optarg);
 			break;
 		case 'p':
-			*p = atoi(optarg);
+			pDPCamInfo->port = atoi(optarg);
 			break;
 		case 'o':
-			*o = atoi(optarg);
+			pDPCamInfo->overlay_draw_format = atoi(optarg);
 			break;
 		case 'd':
-			*d = atoi(optarg);
+			pDPCamInfo->full_screen = atoi(optarg);
+			break;
+		case 'x':
+			pDPCamInfo->crop_x = atoi(optarg);
+			break;
+		case 'y':
+			pDPCamInfo->crop_y = atoi(optarg);
+			break;
+		case 's':
+			sscanf(optarg, "%dx%d", &(pDPCamInfo->crop_width), &(pDPCamInfo->crop_height) );
+			break;
+		case 'r':
+			sscanf(optarg, "%dx%d", &(pDPCamInfo->dp_width), &(pDPCamInfo->dp_height) );
+			break;
+		case 'M':
+			pDPCamInfo->use_max9286 = atoi(optarg);
 			break;
 		}
+	}
+
+	if(pDPCamInfo->crop_width == 0)
+	{
+		pDPCamInfo->crop_width = pDPCamInfo->w;
+	}
+	if(pDPCamInfo->crop_height == 0)
+	{
+		pDPCamInfo->crop_height = pDPCamInfo->h;
 	}
 
 	return 0;

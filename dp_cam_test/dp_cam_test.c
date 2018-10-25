@@ -227,8 +227,8 @@ struct dp_device * dp_device_init(int fd)
 	return device;
 }
 
-int dp_plane_update(struct dp_device *device, struct dp_framebuffer *fb,
-		uint32_t w, uint32_t h, uint32_t dw, uint32_t dh, uint32_t p)
+int dp_plane_update(struct dp_device *device, struct dp_framebuffer *fb, uint32_t crop_x, uint32_t crop_y,
+		uint32_t crop_width, uint32_t crop_height, uint32_t dw, uint32_t dh, uint32_t p)
 {
 	int err;
 	struct dp_plane *plane;
@@ -247,7 +247,9 @@ int dp_plane_update(struct dp_device *device, struct dp_framebuffer *fb,
 		return -EINVAL;
 	}
 
-	err = dp_plane_set(plane, fb, 0, 0, (int)dw, (int)dh, 0, 0, w, h);
+	//err = dp_plane_set(plane, fb, 0, 0, (int)dw, (int)dh, 0, 0, w, h);
+	err = dp_plane_set(plane, fb, 0, 0, (int)dw, (int)dh, crop_x, crop_y, crop_width, crop_height);
+	
 	if(err<0) {
 		DP_ERR("set plane failed \n");
 		return -EINVAL;
@@ -257,7 +259,7 @@ int dp_plane_update(struct dp_device *device, struct dp_framebuffer *fb,
 }
 
 struct dp_framebuffer * dp_buffer_init(
-	struct dp_device *device, int  x, int y, int gem_fd, uint32_t p)
+	struct dp_device *device, int  x, int y, int gem_fd, uint32_t p, uint32_t use_max9286)
 {
 	struct dp_framebuffer *fb = NULL;
 	int op_format = 8/*YUV420*/;
@@ -298,6 +300,9 @@ struct dp_framebuffer * dp_buffer_init(
 		return NULL;
 	}
 
+	if(use_max9286 == 1)
+		fb->height += 1;
+
 	err = dp_framebuffer_addfb2(fb);
 	if (err<0) {
 		DP_ERR("fail : framebuffer add Fail \n");
@@ -307,6 +312,9 @@ struct dp_framebuffer * dp_buffer_init(
 
 		return NULL;
 	}
+
+	if(use_max9286 == 1)
+		fb->height -= 1;
 
 	return fb;
 }
@@ -626,10 +634,7 @@ void draw_rgb_overlay(int width, int height, uint32_t pixelbyte, void *vaddr)
 	}
 }
 
-int camera_test(struct dp_device *device, int drm_fd, uint32_t m, uint32_t w,
-		uint32_t h, uint32_t sw, uint32_t sh, uint32_t f,
-		uint32_t bus_f, uint32_t count, uint32_t t, uint32_t p,
-		uint32_t o, uint32_t full_screen)
+int camera_test(struct dp_device *device, int drm_fd, DP_CAM_INFO mDPCamInfo)
 {
 	int ret;
 	int gem_fds[MAX_BUFFER_COUNT] = { -1, };
@@ -657,79 +662,79 @@ int camera_test(struct dp_device *device, int drm_fd, uint32_t m, uint32_t w,
 	int overlay = 0;
 
 	DP_DBG("m: %d, w: %d, h: %d, sw : %d, sh : %d, f: %d, bus_f: %d, c: %d, type : %d\n",
-	       m, w, h, sw, sh, f, bus_f, count, t);
+	       mDPCamInfo.m, mDPCamInfo.w, mDPCamInfo.h, mDPCamInfo.sw, mDPCamInfo.sh, mDPCamInfo.f, mDPCamInfo.bus_f, mDPCamInfo.count, mDPCamInfo.t);
 
 	// workaround code
-	if (f == 0)
-		f = V4L2_PIX_FMT_YUV420;
+	if (mDPCamInfo.f == 0)
+		mDPCamInfo.f = V4L2_PIX_FMT_YUV420;
 
-	switch (bus_f) {
+	switch (mDPCamInfo.bus_f) {
 	case 0:
-		bus_f = MEDIA_BUS_FMT_YUYV8_2X8;
+		mDPCamInfo.bus_f = MEDIA_BUS_FMT_YUYV8_2X8;
 		break;
 	case 1:
-		bus_f = MEDIA_BUS_FMT_UYVY8_2X8;
+		mDPCamInfo.bus_f = MEDIA_BUS_FMT_UYVY8_2X8;
 		break;
 	case 2:
-		bus_f = MEDIA_BUS_FMT_VYUY8_2X8;
+		mDPCamInfo.bus_f = MEDIA_BUS_FMT_VYUY8_2X8;
 		break;
 	case 3:
-		bus_f = MEDIA_BUS_FMT_YVYU8_2X8;
+		mDPCamInfo.bus_f = MEDIA_BUS_FMT_YVYU8_2X8;
 		break;
 	};
 
-	switch (t) {
+	switch (mDPCamInfo.t) {
 	case 0:
-		t = V4L2_FIELD_ANY;
+		mDPCamInfo.t = V4L2_FIELD_ANY;
 		break;
 	case 1:
-		t = V4L2_FIELD_NONE;
+		mDPCamInfo.t = V4L2_FIELD_NONE;
 		break;
 	case 2:
-		t = V4L2_FIELD_INTERLACED;
+		mDPCamInfo.t = V4L2_FIELD_INTERLACED;
 		break;
 	default:
-		t = V4L2_FIELD_ANY;
+		mDPCamInfo.t = V4L2_FIELD_ANY;
 		break;
 	};
 
-	int sensor_fd = nx_v4l2_open_device(nx_sensor_subdev, m);
+	int sensor_fd = nx_v4l2_open_device(nx_sensor_subdev, mDPCamInfo.m);
 	if (sensor_fd < 0) {
-		DP_ERR("failed to open camera %d sensor\n", m);
+		DP_ERR("failed to open camera %d sensor\n", mDPCamInfo.m);
 		return -1;
 	}
 
-	bool is_mipi = nx_v4l2_is_mipi_camera(m);
+	bool is_mipi = nx_v4l2_is_mipi_camera(mDPCamInfo.m);
 
 	int csi_subdev_fd;
 	if (is_mipi) {
-		csi_subdev_fd = nx_v4l2_open_device(nx_csi_subdev, m);
+		csi_subdev_fd = nx_v4l2_open_device(nx_csi_subdev, mDPCamInfo.m);
 		if (csi_subdev_fd < 0) {
 			DP_ERR("failed open mipi csi\n");
 			return -1;
 		}
 	}
 
-	int clipper_subdev_fd = nx_v4l2_open_device(nx_clipper_subdev, m);
+	int clipper_subdev_fd = nx_v4l2_open_device(nx_clipper_subdev, mDPCamInfo.m);
 	if (clipper_subdev_fd < 0) {
-		DP_ERR("failed to open clipper_subdev %d\n", m);
+		DP_ERR("failed to open clipper_subdev %d\n", mDPCamInfo.m);
 		return -1;
 	}
 
-	int clipper_video_fd = nx_v4l2_open_device(nx_clipper_video, m);
+	int clipper_video_fd = nx_v4l2_open_device(nx_clipper_video, mDPCamInfo.m);
 	if (clipper_video_fd < 0) {
-		DP_ERR("failed to open clipper_video %d\n", m);
+		DP_ERR("failed to open clipper_video %d\n", mDPCamInfo.m);
 		return -1;
 	}
 
 	nx_v4l2_streamoff(clipper_video_fd, nx_clipper_video);
 
-	ret = nx_v4l2_link(true, m, nx_clipper_subdev, 1,
+	ret = nx_v4l2_link(true, mDPCamInfo.m, nx_clipper_subdev, 1,
 			   nx_clipper_video, 0);
 
 	if (is_mipi) {
 		// link sensor to mipi csi
-		ret = nx_v4l2_link(true, m, nx_sensor_subdev, 0, nx_csi_subdev,
+		ret = nx_v4l2_link(true, mDPCamInfo.m, nx_sensor_subdev, 0, nx_csi_subdev,
 				   0);
 		if (ret) {
 			DP_ERR("failed to link sensor to csi\n");
@@ -737,14 +742,14 @@ int camera_test(struct dp_device *device, int drm_fd, uint32_t m, uint32_t w,
 		}
 
 		// link mipi csi to clipper subdev
-		ret = nx_v4l2_link(true, m, nx_csi_subdev, 1, nx_clipper_subdev,
+		ret = nx_v4l2_link(true, mDPCamInfo.m, nx_csi_subdev, 1, nx_clipper_subdev,
 				   0);
 		if (ret) {
 			DP_ERR("failed to link csi to clipper\n");
 			return ret;
 		}
 	} else {
-		ret = nx_v4l2_link(true, m, nx_sensor_subdev, 0,
+		ret = nx_v4l2_link(true, mDPCamInfo.m, nx_sensor_subdev, 0,
 				   nx_clipper_subdev, 0);
 		if (ret) {
 			DP_ERR("failed to link sensor to clipper\n");
@@ -752,46 +757,46 @@ int camera_test(struct dp_device *device, int drm_fd, uint32_t m, uint32_t w,
 		}
 	}
 
-	ret = nx_v4l2_set_format(sensor_fd, nx_sensor_subdev, w, h,
-				bus_f);
+	ret = nx_v4l2_set_format(sensor_fd, nx_sensor_subdev, mDPCamInfo.w, mDPCamInfo.h,
+				mDPCamInfo.bus_f);
 	if (ret) {
 		DP_ERR("failed to set_format for sensor\n");
 		return ret;
 	}
 
 	if (is_mipi) {
-		ret = nx_v4l2_set_format(csi_subdev_fd, nx_csi_subdev, w, h, f);
+		ret = nx_v4l2_set_format(csi_subdev_fd, nx_csi_subdev, mDPCamInfo.w, mDPCamInfo.h, mDPCamInfo.f);
 		if (ret) {
 			DP_ERR("failed to set_format for csi\n");
 			return ret;
 		}
 	}
 
-	ret = nx_v4l2_set_format(clipper_subdev_fd, nx_clipper_subdev, w, h,
-				bus_f);
+	ret = nx_v4l2_set_format(clipper_subdev_fd, nx_clipper_subdev, mDPCamInfo.w, mDPCamInfo.h,
+				mDPCamInfo.bus_f);
 	if (ret) {
 		DP_ERR("failed to set_format for clipper subdev\n");
 		return ret;
 	}
 
 	ret = nx_v4l2_set_format_with_field(clipper_video_fd, nx_clipper_video,
-		w, h, f, t);
+		mDPCamInfo.w, mDPCamInfo.h, mDPCamInfo.f, mDPCamInfo.t);
 	if (ret) {
 		DP_ERR("failed to set_format for clipper video\n");
 		return ret;
 	}
 
 	// set crop
-	ret = nx_v4l2_set_crop(clipper_subdev_fd, nx_clipper_subdev, 0, 0, w,
-			       h);
+	ret = nx_v4l2_set_crop(clipper_subdev_fd, nx_clipper_subdev, 0, 0, mDPCamInfo.w,
+			       mDPCamInfo.h);
 	if (ret) {
 		DP_ERR("failed to set_crop for clipper subdev\n");
 		return ret;
 	}
 
-	if (sw > 0 && sh > 0) {
+	if (mDPCamInfo.sw > 0 && mDPCamInfo.sh > 0) {
 		ret = nx_v4l2_set_crop(clipper_video_fd, nx_clipper_video,
-				0, 0, sw, sh);
+				0, 0, mDPCamInfo.sw, mDPCamInfo.sh);
 		if (ret) {
 			DP_ERR("failed to set_crop for clipper subdev\n");
 			return ret;
@@ -805,10 +810,10 @@ int camera_test(struct dp_device *device, int drm_fd, uint32_t m, uint32_t w,
 		return ret;
 	}
 
-	if (t == V4L2_FIELD_INTERLACED)
-		alloc_size = calc_alloc_size_interlace(w, h, f, t);
+	if (mDPCamInfo.t == V4L2_FIELD_INTERLACED)
+		alloc_size = calc_alloc_size_interlace(mDPCamInfo.w, mDPCamInfo.h, mDPCamInfo.f, mDPCamInfo.t);
 	else
-		alloc_size = calc_alloc_size(w, h, f);
+		alloc_size = calc_alloc_size(mDPCamInfo.w, mDPCamInfo.h, mDPCamInfo.f);
 
 	if (alloc_size <= 0) {
 		DP_ERR("invalid alloc size %lu\n", alloc_size);
@@ -832,11 +837,11 @@ int camera_test(struct dp_device *device, int drm_fd, uint32_t m, uint32_t w,
 
 		struct dp_framebuffer *fb;
 
-		if (t == V4L2_FIELD_INTERLACED)
-			fb = dp_buffer_init_interlace(device, w, h, gem_fd, t,
-					p);
+		if (mDPCamInfo.t == V4L2_FIELD_INTERLACED)
+			fb = dp_buffer_init_interlace(device, mDPCamInfo.w, mDPCamInfo.h, gem_fd, mDPCamInfo.t,
+					mDPCamInfo.port);
 		else
-			fb = dp_buffer_init(device, w, h, gem_fd, p);
+			fb = dp_buffer_init(device, mDPCamInfo.w, mDPCamInfo.h, gem_fd, mDPCamInfo.port, mDPCamInfo.use_max9286);
 		if (!fb) {
 			DP_ERR("fail : framebuffer Init %m\n");
 			ret = -1;
@@ -860,14 +865,14 @@ int camera_test(struct dp_device *device, int drm_fd, uint32_t m, uint32_t w,
 
 	/*	set video priority	*/
 	video_type = DRM_PLANE_TYPE_OVERLAY | NX_PLANE_TYPE_VIDEO;
-	video_index = get_plane_index_by_type(device, p, video_type);
+	video_index = get_plane_index_by_type(device, mDPCamInfo.port, video_type);
 	if (video_index < 0) {
 		DP_ERR("fail : not found matching layer\n");
 		return -1;
 	}
 
 	rgb_type = DRM_PLANE_TYPE_OVERLAY | NX_PLANE_TYPE_RGB;
-	rgb_index = get_plane_index_by_type(device, p, rgb_type);
+	rgb_index = get_plane_index_by_type(device, mDPCamInfo.port, rgb_type);
 	if (rgb_index < 0) {
 		DP_ERR("fail : not found matching layer\n");
 		return -1;
@@ -886,7 +891,14 @@ int camera_test(struct dp_device *device, int drm_fd, uint32_t m, uint32_t w,
 		return -1;
 	}
 
-	if ( o < 1 || o > 8) {
+	// camsys camera
+	if(mDPCamInfo.dp_width != 0)
+		dp_width = mDPCamInfo.dp_width;
+	
+	if(mDPCamInfo.dp_height != 0)
+		dp_height = mDPCamInfo.dp_height;
+
+	if ( mDPCamInfo.overlay_draw_format < 1 || mDPCamInfo.overlay_draw_format > 8) {
 		DP_ERR("not support drawing overlay format.\n");
 		overlay = 0;
 	} else
@@ -895,9 +907,9 @@ int camera_test(struct dp_device *device, int drm_fd, uint32_t m, uint32_t w,
 	if (overlay) {
 		/*	alloc framebuffer rgb layer	*/
 		res = alloc_rgb_framebuffer(device, dp_width, dp_height,
-				RGB_FORMAT_FIRST_INDEX + o,
+				RGB_FORMAT_FIRST_INDEX + mDPCamInfo.overlay_draw_format,
 				drm_fd, &rgb_gem_fd, &rgb_dma_fd, &rgb_fb,
-				&vaddr, p);
+				&vaddr, mDPCamInfo.port);
 		if (res < 0)
 			DP_ERR("failed allocation rgb framebuffer : %d\n",
 					res);
@@ -906,7 +918,7 @@ int camera_test(struct dp_device *device, int drm_fd, uint32_t m, uint32_t w,
 		dp_plane_set(plane, rgb_fb, 0, 0, dp_width, dp_height, 0, 0,
 				dp_width, dp_height);
 
-		format = choose_format(plane, RGB_FORMAT_FIRST_INDEX + o);
+		format = choose_format(plane, RGB_FORMAT_FIRST_INDEX + mDPCamInfo.overlay_draw_format);
 		pixelbyte = get_pixel_byte(format);
 
 		/* draw overlay */
@@ -919,7 +931,7 @@ int camera_test(struct dp_device *device, int drm_fd, uint32_t m, uint32_t w,
 		return ret;
 	}
 
-	int loop_count = count;
+	int loop_count = mDPCamInfo.count;
 	while (loop_count--) {
 		int dq_index;
 
@@ -938,15 +950,18 @@ int camera_test(struct dp_device *device, int drm_fd, uint32_t m, uint32_t w,
 			return ret;
 		}
 
-		if (full_screen) {
+		if (mDPCamInfo.full_screen) {
 			dw = dp_width;
 			dh = dp_height;
 		} else {
-			dw = w;
-			dh = h;
+			dw = mDPCamInfo.w;
+			dh = mDPCamInfo.h;
 		}
 
-		ret = dp_plane_update(device, fbs[dq_index], w, h, dw, dh, p);
+		ret = dp_plane_update(device, fbs[dq_index], 
+		                      mDPCamInfo.crop_x, mDPCamInfo.crop_y, 
+							  mDPCamInfo.crop_width, mDPCamInfo.crop_height, 
+							  dw, dh, mDPCamInfo.port);
 	/*	if (ret) {
 			DP_ERR("failed plane update \n");
 			return ret;
@@ -979,18 +994,18 @@ int camera_test(struct dp_device *device, int drm_fd, uint32_t m, uint32_t w,
 int main(int argc, char *argv[])
 {
 	int ret, drm_fd, err;
-	uint32_t m, w, h, f, bus_f, count, t = 0;
-	struct dp_device *device;
+	struct dp_device *device = NULL;
 	int dbg_on = 0;
-	uint32_t sw = 0, sh = 0;
-	uint32_t port = 0;
-	uint32_t overlay_draw_format = -1;
-	uint32_t full_screen = 0;
+	
+	DP_CAM_INFO mDPCamInfo;
+
+	memset(&mDPCamInfo, 0x0, sizeof(DP_CAM_INFO));
+	mDPCamInfo.overlay_draw_format = -1;
 
 	dp_debug_on(dbg_on);
-
-	ret = handle_option(argc, argv, &m, &w, &h, &sw, &sh, &f, &bus_f,
-			&count, &t, &port, &overlay_draw_format, &full_screen);
+	
+	ret = handle_option(argc, argv, &mDPCamInfo);
+	
 	if (ret) {
 		DP_ERR("failed to handle_option\n");
 		return ret;
@@ -1008,8 +1023,7 @@ int main(int argc, char *argv[])
 		return -1;
 	}
 
-	err = camera_test(device, drm_fd, m, w, h, sw, sh, f, bus_f, count, t,
-			port, overlay_draw_format, full_screen);
+	err = camera_test(device, drm_fd, mDPCamInfo);
 	if (err < 0) {
 		DP_ERR("failed to do camera_test \n");
 		return -1;
