@@ -217,13 +217,11 @@ static int capture_loop (int fd, struct buffer *buffers, struct v4l2_format fmt,
 	FILE				*fout;
 	char				out_name[25 + strlen(out_dir)];
 	int				jpegfile;
-	static struct timespec		start, end;
-	static long long		t;
-	char				temp[100];
 
-	printf("\n------- Bitrate -------\n");
+	printf("capture %d frame", n_frames);
 
 	for (i = 0; i < n_frames; i++) {
+		printf(".");
 		do {
 			FD_ZERO(&fds);
 			FD_SET(fd, &fds);
@@ -243,19 +241,8 @@ static int capture_loop (int fd, struct buffer *buffers, struct v4l2_format fmt,
 		buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
 		buf.memory = V4L2_MEMORY_MMAP;
 
-		if(clock_gettime(CLOCK_MONOTONIC, &start) < 0)
-			printf("gettime error\n");
 		/* get frame buffer */
 		xioctl(fd, VIDIOC_DQBUF, &buf);
-		if(clock_gettime(CLOCK_MONOTONIC, &end) < 0)
-			printf("gettime error\n");
-
-		/* calculate bitrate (ns) */
-		t = (end.tv_sec - start.tv_sec) * 1000000000 + (end.tv_nsec - start.tv_nsec);
-		float bps = (float)buf.bytesused/(float)t;
-		printf("Bitrate: %f bps (= %f Mbps)\n", bps*1000000000*8, bps*1000*8);
-		sprintf(temp, "Bitrate: %f bps (= %f Mbps)\n", bps*1000000000*8, bps*1000*8);
-		save_result(temp);
 
 		/* save file */
 		if(strcmp(format, "ppm") == 0) {
@@ -278,6 +265,8 @@ static int capture_loop (int fd, struct buffer *buffers, struct v4l2_format fmt,
 		}
 		xioctl(fd, VIDIOC_QBUF, &buf);
 	}
+	printf("\n");
+
 	return 0;
 }
 
@@ -291,7 +280,7 @@ uint64_t ns_time_monotonic() {
 	return ((uint64_t)now.tv_sec *NSEC_PER_SEC + (uint64_t) now.tv_nsec);
 }
 
-static int capture_framerate(int fd)
+static int capture_rate(int fd)
 {
 	struct v4l2_buffer		buf;
 	struct timeval			tv;
@@ -300,8 +289,9 @@ static int capture_framerate(int fd)
 	uint64_t			start, end;
 	int				fps = 0;
 	char				temp[100];
+	int				bytes = 0;
 
-	printf("\n--- Grab frame, Get framerate ---\n");
+	printf("\n--- Get bitrate and framerate ---\n");
 
 	start = ns_time_monotonic();
 
@@ -325,19 +315,24 @@ static int capture_framerate(int fd)
 		buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
 		buf.memory = V4L2_MEMORY_MMAP;
 
-		end = ns_time_monotonic();
-		if (end - start >= 1 * NSEC_PER_SEC)
-			break;
-		else
-			fps++;
-
 		/* get frame buffer */
 		xioctl(fd, VIDIOC_DQBUF, &buf);
+
+		end = ns_time_monotonic();
+		if (end - start >= 1 * NSEC_PER_SEC) {
+			break;
+		} else {
+			bytes += buf.bytesused;
+			fps++;
+		}
 
 		xioctl(fd, VIDIOC_QBUF, &buf);
 	}
 	printf("Framerate: %d fps\n", fps);
 	sprintf(temp, "Framerate: %d fps\n", fps);
+	save_result(temp);
+	printf("Bitrate: %d Bps\n", bytes);
+	sprintf(temp, "Bitrate: %d Bps\n", bytes);
 	save_result(temp);
 	return 0;
 }
@@ -345,7 +340,6 @@ static int capture_framerate(int fd)
 static void print_capability(int fd)
 {
 	struct			v4l2_capability vcap;
-	//FILE			*fp;
 	char			temp[200];
 
 	printf("\n----- UVC capability ------\n");
@@ -461,7 +455,6 @@ static void print_capability(int fd)
 			strcat(temp, "Device Capabilites\n");
 		}
 	}
-
 	save_result(temp);
 }
 
@@ -541,7 +534,7 @@ static int capture(char *dev_name, int x_res, int y_res, int n_frames,
 				sleep_ms);
 	else {
 		capture_loop(fd, buffers, fmt, n_frames, out_dir, format, format_name);
-		capture_framerate(fd);
+		capture_rate(fd);
 	}
 
 	type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
@@ -570,6 +563,7 @@ static const struct argp_option options[] = {
 	{"n-frames",	'n',	"NFRAMES",	0,	"number of frames to capture", 0},
 	{"x",		'x',	"X_RES",	0,	"vertical length of frame", 0},
 	{"y",		'y',	"Y_RES",	0,	"horizontal lenght of frame", 0},
+	{"pix_fmt",	'p',	"PIX_FMT",	0,	"pixel format \n(RGB, BGR, MJPEG, JPEG, YUYV, YU12, YV12)", 0},
 	{ 0, 0, 0, 0, 0, 0 }
 };
 
@@ -581,6 +575,7 @@ static int	threads = 0;
 static int	block = 0;
 static int	sleep_ms = 0;
 static char	*format = "ppm";
+static char	*pixel_format = "none";
 static int	x = 0;
 static int	y = 0;
 
@@ -606,6 +601,9 @@ static error_t parse_opt(int k, char *arg, struct argp_state *state)
 	case 'y':
 		y = atoi(arg);
 		break;
+	case 'p':
+		pixel_format = arg;
+		break;
 	default:
 		return ARGP_ERR_UNKNOWN;
 	}
@@ -620,14 +618,15 @@ static struct argp argp = {
 
 int main(int argc, char **argv)
 {
-	struct				v4l2_fmtdesc fmtdesc;
+	struct v4l2_fmtdesc		fmtdesc;
 	uint32_t			list[10];
-	struct				frame_size size[20];
+	struct frame_size		size[20];
 	int				fd;
 	int				n, d, z, k = 0;
 	char				temp[100];
 	int				ret;
 	char				*format_name;
+	struct v4l2_frmsizeenum		fr_size;
 
 	argp_parse(&argp, argc, argv, 0, 0, 0);
 
@@ -650,23 +649,39 @@ int main(int argc, char **argv)
 
 	while((ret = v4l2_ioctl(fd, VIDIOC_ENUM_FMT, &fmtdesc)) == 0) {
 		printf("%s\n", fmtdesc.description);
-		sprintf(temp, "%s\n", fmtdesc.description);
-		save_result(temp);
+		strcat(temp, (char*)fmtdesc.description);
+		strcat(temp, "\n");
 
 		list[fmtdesc.index] = fmtdesc.pixelformat;
 		fmtdesc.index++;
 	}
+	save_result(temp);
 	temp[0] = '\0';
-	d = fmtdesc.index;
 
+	/* when pixel format is specified */
+	if(strcmp(pixel_format,"none")) {
+		d = 1;
+		if(strcmp(pixel_format, "RGB") == 0)
+			list[0] = V4L2_PIX_FMT_RGB24;
+		if(strcmp(pixel_format, "BGR") == 0)
+			list[0] = V4L2_PIX_FMT_BGR24;
+		if(strcmp(pixel_format, "JPEG") == 0)
+			list[0] = V4L2_PIX_FMT_JPEG;
+		if(strcmp(pixel_format, "MJPEG") == 0)
+			list[0] = V4L2_PIX_FMT_MJPEG;
+		if(strcmp(pixel_format, "YUYV") == 0)
+			list[0] = V4L2_PIX_FMT_YUYV;
+		if(strcmp(pixel_format, "YU12") == 0)
+			list[0] = V4L2_PIX_FMT_YUV420;
+		if(strcmp(pixel_format, "YV12") == 0)
+			list[0] = V4L2_PIX_FMT_YVU420;
+	} else
+		d = fmtdesc.index;
 
 	/* get capability */
 	print_capability(fd);
 
-
 	/* get supported framesize */
-	struct v4l2_frmsizeenum fr_size;
-
 	fr_size.pixel_format = list[0];
 	fr_size.index = 0;
 
@@ -676,24 +691,25 @@ int main(int argc, char **argv)
 
 	v4l2_ioctl(fd, VIDIOC_ENUM_FRAMESIZES, &fr_size);
 
-	if(x != 0 || y != 0) {
+	while (v4l2_ioctl(fd, VIDIOC_ENUM_FRAMESIZES, &fr_size) != -1) {
+		printf("%dx%d\n", fr_size.discrete.width, fr_size.discrete.height);
+
+		sprintf(temp, "%dx%d\n", fr_size.discrete.width, fr_size.discrete.height);
+		save_result(temp);
+
+		size[fr_size.index].x = fr_size.discrete.width;
+		size[fr_size.index].y = fr_size.discrete.height;
+		fr_size.index += 1;
+	}
+	k = fr_size.index;
+
+	/* when frame size is specified */
+	if(x != 0 &&  y != 0) {
 		size[0].x = x;
 		size[0].y = y;
 		k = 1;
-	} else {
-
-		while (v4l2_ioctl(fd, VIDIOC_ENUM_FRAMESIZES, &fr_size) != -1) {
-			printf("%dx%d\n", fr_size.discrete.width, fr_size.discrete.height);
-
-			sprintf(temp, "%dx%d\n", fr_size.discrete.width, fr_size.discrete.height);
-			save_result(temp);
-
-			size[fr_size.index].x = fr_size.discrete.width;
-			size[fr_size.index].y = fr_size.discrete.height;
-			fr_size.index += 1;
-		}
-		k = fr_size.index;
 	}
+
 	v4l2_close(fd);
 
 
@@ -755,3 +771,4 @@ int main(int argc, char **argv)
 	}
 	return 0;
 }
+
