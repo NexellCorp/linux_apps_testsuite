@@ -7,11 +7,11 @@
 #include "option.h"
 
 int handle_option(int argc, char **argv, uint32_t *w,
-		  uint32_t *h, uint32_t *c, char *d)
+		  uint32_t *h, uint32_t *c, char *d, uint32_t *t)
 {
 	int opt;
 
-	while ((opt = getopt(argc, argv, "w:h:c:d:")) != -1) {
+	while ((opt = getopt(argc, argv, "w:h:c:d:t:")) != -1) {
 		switch (opt) {
 		case 'w':
 			*w = atoi(optarg);
@@ -24,6 +24,9 @@ int handle_option(int argc, char **argv, uint32_t *w,
 			break;
 		case 'd':
 			strcpy(d, optarg);
+			break;
+		case 't':
+			*t = atoi(optarg);
 			break;
 		}
 	}

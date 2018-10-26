@@ -6,7 +6,7 @@ extern "C" {
 #endif
 
 int handle_option(int argc, char **argv, uint32_t *w,
-		  uint32_t *h, uint32_t *count, char *dev_path);
+		  uint32_t *h, uint32_t *count, char *dev_path, uint32_t *t);
 
 #ifdef __cplusplus
 }
