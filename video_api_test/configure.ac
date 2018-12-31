@@ -1,4 +1,4 @@
-#               -*- Autoconf -*-
+#                                               -*- Autoconf -*-
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ([2.69])
@@ -11,6 +11,7 @@ AM_INIT_AUTOMAKE([1.10 foreign dist-bzip2])
 # Checks for programs.
 AC_PROG_CXX
 AC_PROG_CC
+AC_PROG_INSTALL
 
 # Checks for libraries.
 
@@ -31,11 +32,10 @@ AC_TYPE_UINT64_T
 AC_TYPE_UINT8_T
 AC_CHECK_TYPES([ptrdiff_t])
 
-AM_CONDITIONAL(TARGET_IS_64BIT, [test "$target" = aarch64-linux-gnu])
-
 # Checks for library functions.
 AC_FUNC_MALLOC
-AC_CHECK_FUNCS([gettimeofday memset strdup strerror])
+AC_CHECK_FUNCS([gettimeofday memset realpath strcasecmp strdup strerror])
 
-AC_CONFIG_FILES([Makefile src/Makefile])
+AC_CONFIG_FILES([Makefile
+                 src/Makefile])
 AC_OUTPUT

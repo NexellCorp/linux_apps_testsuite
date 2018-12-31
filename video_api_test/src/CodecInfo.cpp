@@ -109,7 +109,7 @@ unsigned int CodecIdToV4l2Type(int codecId, unsigned int fourcc)
 	else
 	{
 		printf("Cannot support codecid(%d) (0x %x) \n", codecId, codecId);
-		exit(-1);
+		return -1;
 	}
 
 	return v4l2CodecType;

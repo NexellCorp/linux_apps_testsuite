@@ -178,6 +178,7 @@ uint32_t NX_V4l2GetFileFormat( char *pFile, int32_t bContinuous )
 	if( NULL == pExtension )
 		return iFourcc;
 
+	/* Memory Format */
 	if( !strcasecmp( pExtension, "yuv420") )	iFourcc = (bContinuous ? V4L2_PIX_FMT_YUV420 : V4L2_PIX_FMT_YUV420M);
 	if( !strcasecmp( pExtension, "yvu420") )	iFourcc = (bContinuous ? V4L2_PIX_FMT_YVU420 : V4L2_PIX_FMT_YVU420M);
  	if( !strcasecmp( pExtension, "yuv422") )	iFourcc = (bContinuous ? V4L2_PIX_FMT_YUV422P : V4L2_PIX_FMT_YUV422M);
@@ -186,6 +187,25 @@ uint32_t NX_V4l2GetFileFormat( char *pFile, int32_t bContinuous )
 	if( !strcasecmp( pExtension, "nv16") )		iFourcc = (bContinuous ? V4L2_PIX_FMT_NV16 : V4L2_PIX_FMT_NV16M);
 	if( !strcasecmp( pExtension, "nv24") )		iFourcc = (bContinuous ? V4L2_PIX_FMT_NV24 : V4L2_PIX_FMT_NV24M);
 	if( !strcasecmp( pExtension, "grey") )		iFourcc = V4L2_PIX_FMT_GREY;
+	/* Compressed Format */
+	if( !strcasecmp( pExtension, "h264") )		iFourcc = V4L2_PIX_FMT_H264;
+	if( !strcasecmp( pExtension, "mpeg2") )		iFourcc = V4L2_PIX_FMT_MPEG2;
+	if( !strcasecmp( pExtension, "div3") )		iFourcc = V4L2_PIX_FMT_DIV3;
+	if( !strcasecmp( pExtension, "xvid") )		iFourcc = V4L2_PIX_FMT_XVID;
+	if( !strcasecmp( pExtension, "divx") )		iFourcc = V4L2_PIX_FMT_DIVX;
+	if( !strcasecmp( pExtension, "div4") )		iFourcc = V4L2_PIX_FMT_DIV4;
+	if( !strcasecmp( pExtension, "div5") )		iFourcc = V4L2_PIX_FMT_DIV5;
+	if( !strcasecmp( pExtension, "div6") )		iFourcc = V4L2_PIX_FMT_DIV6;
+	if( !strcasecmp( pExtension, "mpeg4") )		iFourcc = V4L2_PIX_FMT_MPEG4;
+	if( !strcasecmp( pExtension, "h263") )		iFourcc = V4L2_PIX_FMT_H263;
+	if( !strcasecmp( pExtension, "wmv9") )		iFourcc = V4L2_PIX_FMT_WMV9;
+	if( !strcasecmp( pExtension, "wvc1") )		iFourcc = V4L2_PIX_FMT_WVC1;
+	if( !strcasecmp( pExtension, "rv8") )		iFourcc = V4L2_PIX_FMT_RV8;
+	if( !strcasecmp( pExtension, "rv9") )		iFourcc = V4L2_PIX_FMT_RV9;
+	if( !strcasecmp( pExtension, "vp8") )		iFourcc = V4L2_PIX_FMT_VP8;
+	if( !strcasecmp( pExtension, "flv1") )		iFourcc = V4L2_PIX_FMT_FLV1;
+	if( !strcasecmp( pExtension, "theora") )	iFourcc = V4L2_PIX_FMT_THEORA;
+	if( !strcasecmp( pExtension, "mjpeg") )		iFourcc = V4L2_PIX_FMT_MJPEG;
 
 	return iFourcc;
 }
@@ -195,6 +215,7 @@ const char* NX_V4l2GetFormatString( uint32_t iFourcc )
 {
 	switch( iFourcc )
 	{
+		/* Memory Format */
 		case V4L2_PIX_FMT_YUV420:	return "YUV420(I420) - YUV420 planar";
 		case V4L2_PIX_FMT_YUV420M:	return "YUV420M(I420) - YUV420 non-continuous planar";
 		case V4L2_PIX_FMT_YVU420:	return "YVU420(YV12) - YUV420 planar";
@@ -216,9 +237,28 @@ const char* NX_V4l2GetFormatString( uint32_t iFourcc )
 		case V4L2_PIX_FMT_NV42:		return "NV42 - YVU444 planar interleaved";
 		case V4L2_PIX_FMT_NV42M:	return "NV42M - YVU444 non-continuous planar interleaved";
 		case V4L2_PIX_FMT_GREY:		return "GREY - Y800 planar";
+		/* Compressed Format */
+		case V4L2_PIX_FMT_H264:		return "H264 Compressed format";
+		case V4L2_PIX_FMT_MPEG2:	return "MPEG2 Compressed format";
+		case V4L2_PIX_FMT_DIV3:		return "DIV3 Compressed format";
+		case V4L2_PIX_FMT_XVID:		return "XVID Compressed format";
+		case V4L2_PIX_FMT_DIVX:		return "DIVX Compressed format";
+		case V4L2_PIX_FMT_DIV4:		return "DIV4 Compressed format";
+		case V4L2_PIX_FMT_DIV5:		return "DIV5 Compressed format";
+		case V4L2_PIX_FMT_DIV6:		return "DIV6 Compressed format";
+		case V4L2_PIX_FMT_MPEG4:	return "MPEG4 Compressed format";
+		case V4L2_PIX_FMT_H263:		return "H263 Compressed format";
+		case V4L2_PIX_FMT_WMV9:		return "WMV9 Compressed format";
+		case V4L2_PIX_FMT_WVC1:		return "WVC1 Compressed format";
+		case V4L2_PIX_FMT_RV8:		return "RV8 Compressed format";
+		case V4L2_PIX_FMT_RV9:		return "RV9 Compressed format";
+		case V4L2_PIX_FMT_VP8:		return "VP8 Compressed format";
+		case V4L2_PIX_FMT_FLV1:		return "FLV1 Compressed format";
+		case V4L2_PIX_FMT_THEORA:	return "THEORA Compressed format";
+		case V4L2_PIX_FMT_MJPEG:	return "MJPEG Compressed format";
 		default: break;
 	}
-	return "";
+	return "Unknown format";
 }
 
 //------------------------------------------------------------------------------
@@ -244,26 +284,38 @@ static int32_t GetChromaSize( NX_VID_MEMORY_INFO *pInMemory, int32_t *iWidth, in
 	case V4L2_PIX_FMT_YUV420M:
 	case V4L2_PIX_FMT_YVU420:
 	case V4L2_PIX_FMT_YVU420M:
+		iChromaWidth  = pInMemory->width >> 1;
+		iChromaHeight = pInMemory->height >> 1;
+		break;
+
 	case V4L2_PIX_FMT_NV12:
 	case V4L2_PIX_FMT_NV12M:
 	case V4L2_PIX_FMT_NV21:
 	case V4L2_PIX_FMT_NV21M:
-		iChromaWidth  = pInMemory->width >> 1;
+		iChromaWidth  = pInMemory->width;
 		iChromaHeight = pInMemory->height >> 1;
 		break;
 
 	case V4L2_PIX_FMT_YUV422P:
 	case V4L2_PIX_FMT_YUV422M:
+		iChromaWidth  = pInMemory->width >> 1;
+		iChromaHeight = pInMemory->height;
+		break;
+
 	case V4L2_PIX_FMT_NV16:
 	case V4L2_PIX_FMT_NV16M:
 	case V4L2_PIX_FMT_NV61:
 	case V4L2_PIX_FMT_NV61M:
-		iChromaWidth  = pInMemory->width >> 1;
+		iChromaWidth  = pInMemory->width;
 		iChromaHeight = pInMemory->height;
 		break;
 
 	case V4L2_PIX_FMT_YUV444:
 	case V4L2_PIX_FMT_YUV444M:
+		iChromaWidth  = pInMemory->width << 1;
+		iChromaHeight = pInMemory->height;
+		break;
+
 	case V4L2_PIX_FMT_NV24:
 	case V4L2_PIX_FMT_NV24M:
 	case V4L2_PIX_FMT_NV42:
@@ -384,12 +436,11 @@ int32_t NX_V4l2LoadMemory( uint8_t *pInSrc, int32_t iWidth, int32_t iHeight, NX_
 	for( int32_t i = 1; i < pOutMemory->planes; i++ )
 	{
 		uint8_t *pDst = (uint8_t*)pOutMemory->pBuffer[i];
-		int32_t iChormaSize = (NX_V4l2IsInterleavedFomrat( pOutMemory->format ) ? iChromaWidth * 2 : iChromaWidth);
 		for( int32_t j = 0; j < iChromaHeight; j++ )
 		{
-			memcpy( (void*)pDst, (void*)pSrc, iChormaSize );
+			memcpy( (void*)pDst, (void*)pSrc, iChromaWidth );
 			pDst += iChromaStride;
-			pSrc += iChormaSize;
+			pSrc += iChromaWidth;
 		}
 	}
 

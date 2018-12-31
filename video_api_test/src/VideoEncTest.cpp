@@ -32,9 +32,9 @@
 #include <nx_video_alloc.h>
 #include <nx_video_api.h>
 
-#if ENABLE_CAMERA
-#include "NX_CV4l2Camera.h"
-#endif
+// #if ENABLE_CAMERA
+// #include "NX_CV4l2Camera.h"
+// #endif
 
 #include "NX_V4l2Utils.h"
 #include "Util.h"
@@ -57,8 +57,7 @@
 #define PLANE_ID			17
 #define CRTC_ID				22
 
-static bool bExitLoop = false;
-
+extern bool bExitLoop;
 
 //----------------------------------------------------------------------------------------------------
 //
