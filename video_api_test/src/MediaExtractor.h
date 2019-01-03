@@ -91,6 +91,16 @@ public:
 		return false;
 	}
 
+	bool GetDuration( int64_t *duration )
+	{
+		if( m_pFormatCtx )
+		{
+			*duration = m_pFormatCtx->duration;
+			return true;
+		}
+		return false;
+	}
+
 	AVStream			*m_VideoStream;
 
 private:

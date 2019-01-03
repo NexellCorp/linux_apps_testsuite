@@ -40,6 +40,7 @@ video_api_test_SOURCES = \
 	Util.cpp			\
 	VideoDecTest.cpp	\
 	VideoEncTest.cpp	\
+	NX_V4l2Utils.cpp	\
 	main.cpp
 
 bin_PROGRAMS = video_api_test

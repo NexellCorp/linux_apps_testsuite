@@ -57,8 +57,7 @@
 #define PLANE_ID			17
 #define CRTC_ID				22
 
-static bool bExitLoop = false;
-
+extern bool bExitLoop;
 
 //----------------------------------------------------------------------------------------------------
 //
