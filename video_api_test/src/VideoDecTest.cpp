@@ -40,28 +40,32 @@
 
 #ifdef ANDROID
 #include "NX_AndroidRenderer.h"
-#define	WINDOW_WIDTH			800 // 1024
-#define	WINDOW_HEIGHT			480 // 600
-#define	NUMBER_OF_BUFFER		12
+#define	WINDOW_WIDTH				800 // 1024
+#define	WINDOW_HEIGHT				480 // 600
+#define	NUMBER_OF_BUFFER			12
 #define	MAX_NUMBER_OF_BUFFER		12
 #endif
 
 #define ENABLE_ASPECT_RATIO
-#define SCREEN_WIDTH	(1080)
-#define SCREEN_HEIGHT	(1920)
+#define SCREEN_WIDTH				(1080)
+#define SCREEN_HEIGHT				(1920)
 
 #if ENABLE_DRM_DISPLAY
 #include <drm_fourcc.h>
 #include "DrmRender.h"
 #endif
 
-#define IMG_FORMAT		V4L2_PIX_FMT_YVU420M // V4L2_PIX_FMT_YVU420
-#define IMG_PLANE_NUM	3
+#define NX_IMAGE_FORMAT					V4L2_PIX_FMT_YUV420	// V4L2_PIX_FMT_YVU420
+#define NX_ADDITIONAL_BUFFER			3
+
+#define NX_ENABLE_FRAME_INFO			true
+
+#define NX_TEST_FLUSH_API				true	// use flush api
 
 #define PLANE_ID		26
 #define CRTC_ID			31
 
-static bool bExitLoop = false;
+extern bool bExitLoop;
 
 //----------------------------------------------------------------------------------------------------
 //
@@ -91,6 +95,7 @@ static void signal_handler( int32_t sig )
 	}
 }
 
+//------------------------------------------------------------------------------
 static void register_signal( void )
 {
 	signal( SIGINT,  signal_handler );
@@ -108,6 +113,9 @@ int32_t VpuDecMain( CODEC_APP_DATA *pAppData )
 	uint8_t streamBuffer[4*1024*1024];
 	int32_t ret, seqflg = 0;
 	int32_t imgWidth = -1, imgHeight = -1;
+
+	if( bExitLoop )
+		return -1;
 
 	CMediaReader *pMediaReader = new CMediaReader();
 	if (!pMediaReader->OpenFile( pAppData->inFileName))
@@ -167,7 +175,6 @@ int32_t VpuDecMain( CODEC_APP_DATA *pAppData )
 
 	uint32_t v4l2CodecType;
 	int32_t fourcc = -1, codecId = -1;
-	int32_t delayedDisplay = false;
 
 	pMediaReader->GetCodecTagId(AVMEDIA_TYPE_VIDEO, &fourcc, &codecId);
 	v4l2CodecType = CodecIdToV4l2Type(codecId, fourcc);
@@ -178,6 +185,9 @@ int32_t VpuDecMain( CODEC_APP_DATA *pAppData )
 		printf("Fail, NX_V4l2DecOpen().\n");
 		return -1;
 	}
+
+	printf(">>> File Info: %s ( format: 0x%08X, %s )\n",
+		pAppData->inFileName, v4l2CodecType, NX_V4l2GetFormatString(v4l2CodecType));
 
 	//==============================================================================
 	// PROCESS UNIT
@@ -253,11 +263,11 @@ int32_t VpuDecMain( CODEC_APP_DATA *pAppData )
 					goto DEC_TERMINATE;
 				}
 
-				seqIn.width = seqOut.width;
-				seqIn.height = seqOut.height;
-				seqIn.imgPlaneNum = IMG_PLANE_NUM;
-				seqIn.imgFormat = IMG_FORMAT;
-				seqIn.numBuffers = seqOut.minBuffers + 3;
+				seqIn.width       = seqOut.width;
+				seqIn.height      = seqOut.height;
+				seqIn.imgPlaneNum = NX_V4l2GetPlaneNum(NX_IMAGE_FORMAT);
+				seqIn.imgFormat   = NX_IMAGE_FORMAT;
+				seqIn.numBuffers  = seqOut.minBuffers + NX_ADDITIONAL_BUFFER;
 
 #ifdef ANDROID
 				pAndRender->GetBuffers(seqIn.numBuffers, imgWidth, imgHeight, &pMemHandle );
@@ -270,39 +280,36 @@ int32_t VpuDecMain( CODEC_APP_DATA *pAppData )
 				seqIn.imgFormat = hVideoMemory[0]->format;
 #endif
 
-				printf("[Sequence Data] width( %d ), height( %d ), plane( %d ), format( 0x%08x ), buffer( %d )\n",
-					seqIn.width, seqIn.height, seqIn.imgPlaneNum, seqIn.imgFormat, seqIn.numBuffers );
+				printf("[Sequence Data] width( %d ), height( %d ), plane( %d ), format( 0x%08x ), reqiured buffer( %d ), current buffer( %d )\n",
+					seqIn.width, seqIn.height, seqIn.imgPlaneNum, seqIn.imgFormat, seqIn.numBuffers - NX_ADDITIONAL_BUFFER, seqIn.numBuffers );
 
 				ret = NX_V4l2DecInit(hDec, &seqIn);
 				if (ret < 0)
 				{
-					printf("File, NX_V4l2DecInit().\n");
+					printf("Fail, NX_V4l2DecInit().\n");
 					goto DEC_TERMINATE;
 				}
 
 				bInit = true;
-
-				//
-				// If the contents is interlace and the codec type is H264, the display ordering is wrong in VPU.
-				// In this case, Application render with delay.
-				//
-				delayedDisplay = ((v4l2CodecType == V4L2_PIX_FMT_H264) && (seqOut.interlace));
-			}
-
-			if( bSeek )
-			{
-				additionSize += size;
-				bSeek = false;
 				continue;
 			}
 
  			if (frmCnt == pAppData->iSeekStartFrame && pAppData->iSeekStartFrame)
 			{
-				printf("Seek. ( frmCnt(%d frm), seekPos(%d sec) )\n", frmCnt, pAppData->iSeekPos);
+				int32_t seekPos;
+				int64_t duration;
+				pMediaReader->GetDuration(&duration);
+
+				seekPos = (0 > pAppData->iSeekPos) ? duration/1000000 + pAppData->iSeekPos : pAppData->iSeekPos;
+
+				printf("Seek. ( frmCnt(%d frm), seekPos(%d sec) )\n", frmCnt, seekPos );
 				usleep(1000000);
 
-				pMediaReader->SeekStream( pAppData->iSeekPos * 1000 );
-#if 1
+				pMediaReader->SeekStream( seekPos * 1000 );
+
+#if NX_TEST_FLUSH_API
+				NX_V4l2DecFlush( hDec );
+#else
 				do {
 					decIn.strmBuf   = 0;
 					decIn.strmSize  = 0;
@@ -316,8 +323,6 @@ int32_t VpuDecMain( CODEC_APP_DATA *pAppData )
 
 				if( prvIndex >= 0 )
 					NX_V4l2DecClrDspFlag( hDec, NULL, prvIndex );
-#else
-				NX_V4l2DecFlush( hDec );
 #endif
 				prvIndex = -1;
 				additionSize = 0;
@@ -326,83 +331,113 @@ int32_t VpuDecMain( CODEC_APP_DATA *pAppData )
 				continue;
 			}
 
-			memset(&decIn, 0, sizeof(NX_V4L2DEC_IN));
-			decIn.strmBuf   = streamBuffer;
-			decIn.strmSize  = size + additionSize;
-			decIn.timeStamp = timeStamp;
-			decIn.eos       = (size == 0) ? (1) : (0);
-
-			startTime       = NX_GetTickCount();
-			ret             = NX_V4l2DecDecodeFrame(hDec, &decIn, &decOut);
-			endTime         = NX_GetTickCount();
-			totalTime       += (endTime - startTime);
-
-			printf("[%5d Frm] Key=%d Size=%6d, DecIdx=%2d, DispIdx=%2d, InTimeStamp=%7llu, outTimeStamp=%7llu, Time=%6llu, interlace=%1d %1d, Reliable=%3d, %3d, type = %3d, %3d, UsedByte=%5d\n",
-				frmCnt, key, decIn.strmSize, decOut.decIdx, decOut.dispIdx, timeStamp, decOut.timeStamp[DISPLAY_FRAME], (endTime - startTime), decOut.interlace[DECODED_FRAME], decOut.interlace[DISPLAY_FRAME],
-				decOut.outFrmReliable_0_100[DECODED_FRAME], decOut.outFrmReliable_0_100[DISPLAY_FRAME], decOut.picType[DECODED_FRAME], decOut.picType[DISPLAY_FRAME], decOut.usedByte);
-			/*printf("%2x %2x %2x %2x %2x %2x %2x %2x %2x %2x %2x %2x %2x %2x %2x %2x\n",
-				streamBuffer[0], streamBuffer[1], streamBuffer[2], streamBuffer[3], streamBuffer[4], streamBuffer[5], streamBuffer[6], streamBuffer[7],
-				streamBuffer[8], streamBuffer[9], streamBuffer[10], streamBuffer[11], streamBuffer[12], streamBuffer[13], streamBuffer[14], streamBuffer[15]);*/
-
-			if (ret < 0)
-			{
-				printf("Fail, NX_V4l2DecDecodeFrame().\n");
-				break;
+			/*
+			Skip Bitstream
+			*/
+			if(	(V4L2_PIX_FMT_XVID == v4l2CodecType && 0 < size &&   7 >= size) ||
+				(V4L2_PIX_FMT_DIV5 == v4l2CodecType && 0 < size &&   8 >= size) ) {
+				// NX_DumpData( streamBuffer, (size < 16) ? size : 16, "[     Skip] " );
+				continue;
 			}
 
-			if (!delayedDisplay)
+			if( bSeek )
 			{
-				curIndex = decOut.dispIdx;
-				hCurImg  = &decOut.hImg;
+				additionSize = size;
+				bSeek = false;
+				continue;
 			}
 
-			if (curIndex >= 0)
-			{
-				if (fpOut)
+			do {
+				memset(&decIn, 0, sizeof(NX_V4L2DEC_IN));
+				decIn.strmBuf   = (size > 0) ? streamBuffer : NULL;
+				decIn.strmSize  = (size > 0) ? size + additionSize : 0;
+				decIn.timeStamp = (size > 0) ? timeStamp : 0;
+				decIn.eos       = (size > 0) ? 0 : 1;
+
+				startTime       = NX_GetTickCount();
+				ret             = NX_V4l2DecDecodeFrame(hDec, &decIn, &decOut);
+				endTime         = NX_GetTickCount();
+				totalTime       += (endTime - startTime);
+
+				additionSize = 0;
+
+				if (ret < 0)
 				{
-					NX_V4l2DumpMemory(hCurImg, fpOut);
+					printf("Fail, NX_V4l2DecDecodeFrame().\n");
+					break;
 				}
 
+#if NX_ENABLE_FRAME_INFO
+				printf("[%5d Frm] Key=%d, Size=%6d, DecIdx=%2d, DispIdx=%2d, InTimeStamp=%7lld, outTimeStamp=%7lld, Time=%6llu, interlace=%1d %1d, Reliable=%3d, %3d, type =%3d, %3d, UsedByte=%6d, RemainByte=%6d\n",
+					frmCnt, key, decIn.strmSize, decOut.decIdx, decOut.dispIdx, timeStamp, decOut.timeStamp[DISPLAY_FRAME], (endTime - startTime), decOut.interlace[DECODED_FRAME], decOut.interlace[DISPLAY_FRAME],
+					decOut.outFrmReliable_0_100[DECODED_FRAME], decOut.outFrmReliable_0_100[DISPLAY_FRAME], decOut.picType[DECODED_FRAME], decOut.picType[DISPLAY_FRAME], decOut.usedByte, decOut.remainByte);
+				/*printf("%2x %2x %2x %2x %2x %2x %2x %2x %2x %2x %2x %2x %2x %2x %2x %2x\n",
+					streamBuffer[0], streamBuffer[1], streamBuffer[2], streamBuffer[3], streamBuffer[4], streamBuffer[5], streamBuffer[6], streamBuffer[7],
+					streamBuffer[8], streamBuffer[9], streamBuffer[10], streamBuffer[11], streamBuffer[12], streamBuffer[13], streamBuffer[14], streamBuffer[15]);*/
+
+				// NX_DumpData( streamBuffer, (size < 16) ? size : 16, "[%5d Frm] ", frmCnt );
+#endif
+
+				curIndex = decOut.dispIdx;
+				hCurImg  = &decOut.hImg;
+
+				if (curIndex >= 0)
+				{
+					if (fpOut)
+					{
+						NX_V4l2DumpMemory(hCurImg, fpOut);
+					}
+
 #if ENABLE_DRM_DISPLAY
-				UpdateBuffer(hDsp, hCurImg, NULL);
+					UpdateBuffer(hDsp, hCurImg, NULL);
 #endif
 
 #ifdef ANDROID
-				pAndRender->DspQueueBuffer( NULL, curIndex );
-				if( prvIndex != -1 )
-				{
-					pAndRender->DspDequeueBuffer(NULL, NULL);
-				}
+					pAndRender->DspQueueBuffer( NULL, curIndex );
+					if( prvIndex != -1 )
+					{
+						pAndRender->DspDequeueBuffer(NULL, NULL);
+					}
 #endif
 
-				if( pAppData->dumpFileName && outFrmCnt==pAppData->dumpFrameNumber )
-				{
-					printf("Dump Frame. ( frm: %d, name: %s )\n", outFrmCnt, pAppData->dumpFileName);
-					NX_V4l2DumpMemory(hCurImg, (const char*)pAppData->dumpFileName );
-				}
-
-				if( prvIndex >= 0 )
-				{
-					ret = NX_V4l2DecClrDspFlag(hDec, NULL, prvIndex);
-					if (ret < 0)
+					if( pAppData->dumpFileName && outFrmCnt==pAppData->dumpFrameNumber )
 					{
-						printf("Fail, NX_V4l2DecClrDspFlag().\n");
-						break;
+						printf("Dump Frame. ( frm: %d, name: %s )\n", outFrmCnt, pAppData->dumpFileName);
+						NX_V4l2DumpMemory(hCurImg, (const char*)pAppData->dumpFileName );
 					}
+
+					if( prvIndex >= 0 )
+					{
+						ret = NX_V4l2DecClrDspFlag(hDec, NULL, prvIndex);
+						if (0 > ret)
+						{
+							printf("Fail, NX_V4l2DecClrDspFlag().\n");
+							break;
+						}
+					}
+
+					prvIndex = curIndex;
+					outFrmCnt++;
 				}
 
-				prvIndex = curIndex;
-				outFrmCnt++;
-			}
+				frmCnt++;
+				additionSize = 0;
 
-			if (delayedDisplay)
-			{
-				curIndex = decOut.dispIdx;
-				hCurImg  = &decOut.hImg;
-			}
+				if (pAppData->iMaxLimitFrame != 0 && pAppData->iMaxLimitFrame <= frmCnt)
+				{
+					printf("Force Break by User.\n");
+					ret = -1;
+					break;
+				}
+			} while( size == 0 && decOut.dispIdx >= 0 && !ret );
 
-			frmCnt++;
-			additionSize = 0;
+			if( 0 > ret ) break;
+		}
+
+		if( prvIndex >= 0 )
+		{
+			NX_V4l2DecClrDspFlag(hDec, NULL, prvIndex);
+			prvIndex = -1;
 		}
 
 		if (fpOut)

@@ -3,18 +3,16 @@
 
 #include <stdint.h>
 
-uint64_t NX_GetTickCount( void );
-void dumpdata( void *data, int32_t len, const char *msg );
-
-
 /* Application Data */
 typedef struct CODEC_APP_DATA {
 	/* Input Options */
 	char *inFileName;			/* Input File Name */
 
 	/* for Decoder Only Options */
+	char *inDirectory;			/* Input Directory */
 	int32_t iSeekStartFrame;	/* Seek Start Frame */
 	int32_t iSeekPos;			/* Seek Position */
+	int32_t iMaxLimitFrame;		/* Max Limitation Frame */
 
 	/* for Encoder Only Options */
 	int32_t width;				/* Input YUV Image Width */
@@ -35,5 +33,10 @@ typedef struct CODEC_APP_DATA {
 	uint32_t dumpFrameNumber;	/* Dump Frame Number */
 	char *dumpFileName;			/* Dump File Name */
 } CODEC_APP_DATA;
+
+uint64_t NX_GetTickCount( void );
+void NX_DumpData( void *data, int32_t len, const char *pFormat, ... );
+void NX_DumpStream( uint8_t *pStrmBuf, int32_t iStrmSize, const char *pFormat, ... );
+void NX_DumpStream( uint8_t *pStrmBuf, int32_t iStrmSize, FILE *pFile );
 
 #endif // __UTIL_h__
