@@ -7,7 +7,7 @@ LDFLAGS := -L../../sysroot/lib
 #LIBS := -lnx_v4l2 -lnx_allocator -lpthread
 #SRCS := cam_test_thread.cpp
 
-LIBS += -lkms -ldrm -ldrm_nexell -lnx_v4l2 -lnx_scaler -lnx_renderer -lnx_drm_allocator -lpthread
+LIBS += -lkms -ldrm -lnx_scaler -lnx_renderer -lnx_drm_allocator -lpthread -lnx_v4l2
 SRCS := cam_test.cpp option.cpp memory.cpp display.cpp
 OBJS := $(SRCS:.cpp=.o)
 TARGET := cam_test
