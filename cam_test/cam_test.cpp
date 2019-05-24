@@ -242,17 +242,17 @@ int camera_run(struct camera_data *p)
 	if (p->scaling) {
 		d_w = p->scale.dstWidth;
 		d_h = p->scale.dstHeight;
+	} else if ((p->type == nx_decimator_video) && (p->scale.dstWidth) && (p->scale.dstHeight)) {
+		d_w = p->scale.dstWidth;
+		d_h = p->scale.dstHeight;
 	}
+
 	/* Allocate Image */
 	if (p->format == V4L2_PIX_FMT_YUYV)
 		plane_num = 1;
 	for (i = 0; i < MAX_BUFFER_COUNT; i++) {
-		srcMem[i] = alloc_memory(drmFd, s_w, s_h, plane_num, p->format,
-				nx_v4l2_is_interlaced_camera(p->module));
-		if (srcMem[i] == NULL) {
-			CAM_ERR("[%d] srcMem is NULL for %d\n", p->type, i);
-			goto free;
-		}
+		int w = s_w, h = s_h;
+
 		if (p->scaling) {
 			dstMem[i] = alloc_memory(drmFd, d_w, d_h, plane_num, p->format,
 					nx_v4l2_is_interlaced_camera(p->module));
@@ -260,6 +260,15 @@ int camera_run(struct camera_data *p)
 				CAM_ERR("[%d] scaling buf is NULL\n", p->type);
 				goto free;
 			}
+		} else if ((p->type == nx_decimator_video) && (p->scale.dstWidth) && (p->scale.dstHeight)) {
+			w = d_w;
+			h = d_h;
+		}
+		srcMem[i] = alloc_memory(drmFd, w, h, plane_num, p->format,
+				nx_v4l2_is_interlaced_camera(p->module));
+		if (srcMem[i] == NULL) {
+			CAM_ERR("[%d] srcMem is NULL for %d\n", p->type, i);
+			goto free;
 		}
 	}
 
@@ -296,6 +305,14 @@ int camera_run(struct camera_data *p)
 				p->crop[2], p->crop[3]);
 		if (ret) {
 			CAM_ERR("[%d] failed to set crop: %d\n", p->type, ret);
+			goto free;
+		}
+	}
+
+	if (!p->scaling && (p->type == nx_decimator_video) && (p->scale.dstWidth) && (p->scale.dstHeight)) {
+		ret = nx_v4l2_set_selection(videoFd, p->type, d_w, d_h);
+		if (ret) {
+			CAM_ERR("[%d] failed to set selection: %d\n", p->type, ret);
 			goto free;
 		}
 	}
@@ -401,7 +418,6 @@ int camera_run(struct camera_data *p)
 		}
 		if ((p->count == 1) || (!loop_count))
 			break;
-
 		ret = nx_v4l2_qbuf(videoFd, p->type, p_num, dq_index,
 				&srcMem[dq_index]->dmaFd[0], size);
 		if (ret) {
