@@ -112,6 +112,7 @@ int handle_option(int32_t argc, char **argv, struct camera_data *data)
 	uint32_t clipper = 0, decimator = 0, debug = 0;
 	uint32_t vip_crop[4] = {0, };
 	uint32_t scaling_crop[4] = {0, };
+	uint32_t dWidth = 0, dHeight = 0;
 
 	while ((opt = getopt(argc, argv, "m:v:i:f:c:d:s:C:r:S:F:D:Aeph")) != -1)
 	{
@@ -212,21 +213,33 @@ int handle_option(int32_t argc, char **argv, struct camera_data *data)
 			width = vip_crop[2];
 			height = vip_crop[3];
 		}
-		data->scaling = true;
-		data->scale.srcWidth = width;
-		data->scale.srcHeight = height;
-		data->scale.dstWidth = outWidth;
-		data->scale.dstHeight = outHeight;
-		CAM_DBG("scaling enable - dest width:%d height:%d\n", outWidth, outHeight);
 		if (scaling_crop[2] && scaling_crop[3]) {
 			if(get_crop_info(width, height, scaling_crop))
 				goto retry;
+			CAM_DBG("scaling enable - dest width:%d height:%d\n", outWidth, outHeight);
 			data->scale.crop[0] = scaling_crop[0];
 			data->scale.crop[1] = scaling_crop[1];
 			data->scale.crop[2] = scaling_crop[2];
 			data->scale.crop[3] = scaling_crop[3];
 			CAM_DBG("scaling crop - %d:%d:%d:%d\n", scaling_crop[0], scaling_crop[1],
 					scaling_crop[2], scaling_crop[3]);
+			data->scaling = true;
+			data->scale.srcWidth = width;
+			data->scale.srcHeight = height;
+			data->scale.dstWidth = outWidth;
+			data->scale.dstHeight = outHeight;
+			CAM_DBG("scaling enable - dest width:%d height:%d\n", outWidth, outHeight);
+		} else {
+			if (decimator) {
+				CAM_DBG("decimation - src %d:%d to dst %d:%d\n", width, height,
+					outWidth, outHeight);
+				if ((outWidth > width) || (outHeight > height)) {
+					CAM_DBG("can't use decimator for up scaling\n");
+					goto retry;
+				}
+				data->scale.dstWidth = outWidth;
+				data->scale.dstHeight = outHeight;
+			}
 		}
 	}
 
