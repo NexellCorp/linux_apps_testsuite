@@ -166,7 +166,6 @@ static int32_t do_scaling(int hScaler, memory_handle hIn, memory_handle hOut, ui
 
 	// scaler dst
 	scalerCtx.dst_plane_num = MAX_PLANES;
-	scalerCtx.src_width     = hIn->width;
 	scalerCtx.dst_width     = hOut->width;
 	scalerCtx.dst_height    = hOut->height;
 	scalerCtx.dst_code      = convert_formats(hOut->format);
